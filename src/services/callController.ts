@@ -4,7 +4,7 @@ import { EventSocket } from './EventesScocket';
 import { connectStreamingSocket, closeStreamingSocket } from './streamingSocket';
 
 const API_BASE_URL = 'https://api.telnyx.com/v2'; 
-const API_KEY = 'KEY0195F0EA74752211FFA4ADE9B852E3BF_u2cbFgEQQmA93mlbYlG5e1';
+const API_KEY = 'KEY01961A4A775D23BC587C184B5909D9AB_ZU8rMkiI3BMeTllxV30xbb';
 const TELNYX_NUMBER = '+17043681266';
 const TELNYX_CONNECTION_ID = '2633537397060536109';
 const webhookUrl = "https://gitait.com/telnyx/api/webhook";
