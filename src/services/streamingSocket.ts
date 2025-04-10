@@ -11,7 +11,9 @@ import {
   let micStream: MediaStream | null = null;
   let processor: ScriptProcessorNode | null = null;
   let isProcessing = false;
-  const BUFFER_SIZE = 2048;
+  const BUFFER_SIZE = 256; // Minimum power of 2 for ScriptProcessorNode
+  const CHUNK_SIZE = 160; // 20ms at 8kHz
+  let audioBuffer: Float32Array[] = [];
   
   export const connectStreamingSocket = async (streamingUrl: string) => {
     try {
@@ -30,8 +32,8 @@ import {
             // Handle incoming PCMU audio data
             const pcmuBytes = Uint8Array.from(atob(data.media.payload), c => c.charCodeAt(0));
             
-            // Verify chunk size (should be around 160 bytes for 20ms of audio)
-            if (pcmuBytes.length > 0) {
+            // Verify chunk size (should be 160 bytes for 20ms of audio at 8kHz)
+            if (pcmuBytes.length === CHUNK_SIZE) {
               const pcmSamples = pcmuToPCM(pcmuBytes);
               playPCMFromInt16(pcmSamples);
             }
@@ -69,14 +71,14 @@ import {
       // Initialize audio context with proper sample rate
       audioContext = initAudioContext();
       
-      // Get microphone access with improved settings
+      // Get microphone access with improved settings for 8kHz PCMU
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 48000
+          sampleRate: 8000 // Set to 8kHz for PCMU
         }
       });
   
@@ -117,23 +119,45 @@ import {
             gatedData[i] = Math.abs(inputData[i]) > noiseGateThreshold ? inputData[i] : 0;
           }
           
-          // Downsample to 8kHz
-          const downsampledData = downsampleTo8k(gatedData, audioContext!.sampleRate);
+          // Add to buffer
+          audioBuffer.push(gatedData);
           
-          // Convert to PCMU
-          const pcmuData = pcmToPCMU(downsampledData);
-          
-          // Convert to base64
-          const base64Data = btoa(Array.from(pcmuData, byte => String.fromCharCode(byte)).join(''));
-  
-          // Send audio data
-          sendDataToSocket({
-            event: 'media',
-            media: {
-              payload: base64Data,
-              timestamp: Date.now()
+          // Process when we have enough data for a 20ms chunk
+          const totalSamples = audioBuffer.reduce((sum, arr) => sum + arr.length, 0);
+          if (totalSamples >= CHUNK_SIZE) {
+            // Concatenate buffers
+            const combinedBuffer = new Float32Array(totalSamples);
+            let offset = 0;
+            for (const buffer of audioBuffer) {
+              combinedBuffer.set(buffer, offset);
+              offset += buffer.length;
             }
-          });
+            
+            // Keep remaining samples for next chunk
+            const remainingSamples = totalSamples - CHUNK_SIZE;
+            audioBuffer = remainingSamples > 0 
+              ? [combinedBuffer.slice(CHUNK_SIZE)]
+              : [];
+            
+            // Process the 20ms chunk
+            const chunkData = combinedBuffer.slice(0, CHUNK_SIZE);
+            
+            // Downsample to 8kHz and convert to 8-bit PCMU
+            const downsampledData = downsampleTo8k(chunkData, audioContext!.sampleRate);
+            const pcmuData = pcmToPCMU(downsampledData);
+            
+            // Convert to base64
+            const base64Data = btoa(Array.from(pcmuData, byte => String.fromCharCode(byte)).join(''));
+  
+            // Send audio data
+            sendDataToSocket({
+              event: 'media',
+              media: {
+                payload: base64Data,
+                timestamp: Date.now()
+              }
+            });
+          }
         } catch (error) {
           console.error('Error processing audio:', error);
         }
@@ -148,6 +172,7 @@ import {
   
   const stopMicrophoneStream = () => {
     isProcessing = false;
+    audioBuffer = [];
   
     if (processor) {
       processor.disconnect();

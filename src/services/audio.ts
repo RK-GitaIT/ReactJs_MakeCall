@@ -8,7 +8,7 @@ export const initAudioContext = () => {
   if (!audioContext || audioContext.state === 'closed') {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     audioContext = new AudioCtx({ 
-      sampleRate: 48000,
+      sampleRate: SAMPLE_RATE, // Set to 8kHz for PCMU
       latencyHint: 'interactive'
     });
   }
@@ -74,7 +74,7 @@ export const playPCMFromInt16 = (pcmData: Int16Array) => {
   }
 };
 
-// PCMU to PCM conversion with improved quality
+// PCMU to PCM conversion with improved quality for 8-bit
 export const pcmuToPCM = (pcmuData: Uint8Array): Int16Array => {
   const pcmData = new Int16Array(pcmuData.length);
   for (let i = 0; i < pcmuData.length; i++) {
@@ -83,7 +83,7 @@ export const pcmuToPCM = (pcmuData: Uint8Array): Int16Array => {
   return pcmData;
 };
 
-// PCM to PCMU conversion with improved quality
+// PCM to PCMU conversion with improved quality for 8-bit
 export const pcmToPCMU = (pcmData: Int16Array): Uint8Array => {
   const pcmuData = new Uint8Array(pcmData.length);
   for (let i = 0; i < pcmData.length; i++) {
@@ -92,7 +92,7 @@ export const pcmToPCMU = (pcmData: Int16Array): Uint8Array => {
   return pcmuData;
 };
 
-// μ-law to linear PCM conversion with improved precision
+// μ-law to linear PCM conversion optimized for 8-bit
 const uLawToPCM = (ulaw: number): number => {
   ulaw = ~ulaw;
   const sign = (ulaw & 0x80) ? -1 : 1;
@@ -103,7 +103,7 @@ const uLawToPCM = (ulaw: number): number => {
   return sign * sample;
 };
 
-// Linear PCM to μ-law conversion with improved precision
+// Linear PCM to μ-law conversion optimized for 8-bit
 const pcmToULaw = (pcm: number): number => {
   const BIAS = 0x84;
   const CLIP = 32635;
@@ -124,7 +124,7 @@ const pcmToULaw = (pcm: number): number => {
   return ulawByte & 0xFF;
 };
 
-// Downsample audio to 8kHz with improved quality
+// Downsample audio to 8kHz with improved quality for PCMU
 export const downsampleTo8k = (buffer: Float32Array, inputSampleRate: number): Int16Array => {
   const ratio = inputSampleRate / SAMPLE_RATE;
   const newLength = Math.round(buffer.length / ratio);
@@ -150,7 +150,8 @@ export const downsampleTo8k = (buffer: Float32Array, inputSampleRate: number): I
     }
 
     const average = sum / count;
-    result[i] = Math.max(-32768, Math.min(32767, Math.round(average * 32767)));
+    // Scale to 8-bit range for PCMU
+    result[i] = Math.max(-128, Math.min(127, Math.round(average * 127)));
   }
 
   return result;
